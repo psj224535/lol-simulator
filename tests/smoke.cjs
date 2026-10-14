@@ -57,7 +57,7 @@ async function main() {
   if (node("gameCount").textContent !== "500") throw new Error("500경기 시뮬레이션이 완료되지 않았습니다.");
   if (!/경기 진행/.test(node("resultTitle").textContent)) throw new Error("결과 제목이 갱신되지 않았습니다.");
   if (!node("matchLog").innerHTML.includes("#500")) throw new Error("최근 경기 로그가 갱신되지 않았습니다.");
-  console.log("smoke ok: 500 games, metrics and match log rendered");
+  console.log(`smoke ok: 500 games, ${node("hiddenMmr").textContent} hidden MMR, metrics and match log rendered`);
 }
 
 main().catch(error => { console.error(error); process.exit(1); });
