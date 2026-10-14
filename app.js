@@ -7,14 +7,17 @@
     strength: $("matchStrength"), strengthOut: $("matchStrengthOut"),
     width: $("searchWidth"), widthOut: $("searchWidthOut"),
     population: $("population"), matches: $("matchCount"), k: $("kFactor"), seed: $("seed"),
-    run: $("runButton"), heroRun: $("heroRun"), cont: $("continueButton"), auto: $("autoButton"), reset: $("resetButton"),
+    run: $("runButton"), heroRun: $("heroRun"), cont: $("continueButton"), auto: $("autoButton"), reset: $("resetButton"), randomSeed: $("randomSeed"),
     status: $("runStatus"), title: $("resultTitle"), games: $("gameCount"),
     trueTier: $("trueTier"), trueMmr: $("trueMmr"), visibleTier: $("visibleTier"), visibleMmr: $("visibleMmr"),
     hiddenMmr: $("hiddenMmr"), mmrGap: $("mmrGap"), recentWinrate: $("recentWinrate"), record: $("record"),
     verdict: $("verdict"), chart: $("convergenceChart"), matchLog: $("matchLog"),
     fairness: $("fairnessBadge"), expected: $("expectedChance"), actual: $("actualChance"), ally: $("allyAverage"), enemy: $("enemyAverage"),
     convergenceBadge: $("convergenceBadge"), skillError: $("skillError"), firstConvergence: $("firstConvergence"), compensation: $("compensation"), confidence: $("confidence"),
-    compare: $("compareButton"), compareGrid: $("comparisonGrid"), compareNote: $("comparisonNote")
+    compare: $("compareButton"), compareGrid: $("comparisonGrid"), compareNote: $("comparisonNote"),
+    ensemble: $("ensembleButton"), ensembleProgress: $("ensembleProgress"), averageTier: $("averageTier"), averageScore: $("averageScore"),
+    medianTier: $("medianTier"), medianScore: $("medianScore"), tierRange: $("tierRange"), scoreRange: $("scoreRange"),
+    ensembleConvergence: $("ensembleConvergence"), ensembleStatus: $("ensembleStatus")
   };
 
   const tierBands = [
@@ -188,7 +191,7 @@
   }
 
   function setRunningUI(running) {
-    el.run.disabled = running; el.cont.disabled = running; el.compare.disabled = running;
+    el.run.disabled = running; el.cont.disabled = running; el.compare.disabled = running; el.ensemble.disabled = running;
     el.status.textContent = running ? "시뮬레이션 계산 중" : autoTimer ? "연속 실행 중" : "실험 준비됨";
   }
 
@@ -270,10 +273,18 @@
     el.widthOut.textContent = `±${el.width.value} MMR`;
   }
 
+  function resetEnsemble() {
+    el.averageTier.textContent = "—"; el.averageScore.textContent = "평균 표시 점수 —";
+    el.medianTier.textContent = "—"; el.medianScore.textContent = "중앙값 —";
+    el.tierRange.textContent = "—"; el.scoreRange.textContent = "10~90 백분위";
+    el.ensembleConvergence.textContent = "—"; el.ensembleStatus.textContent = "계산 전";
+    el.ensembleProgress.style.width = "0%"; el.ensemble.textContent = "2,000회 평균 계산";
+  }
+
   function activatePreset(name) {
     const p = presets[name]; el.strength.value = p.strength; el.width.value = p.width;
     document.querySelectorAll(".preset").forEach(b => b.classList.toggle("active", b.dataset.preset === name));
-    updateLabels();
+    updateLabels(); resetEnsemble();
   }
 
   async function startSimulation() {
@@ -315,11 +326,70 @@
     el.compare.textContent="다시 비교하기"; busy=false; setRunningUI(false);
   }
 
-  [el.skill,el.strength,el.width].forEach(input=>input.addEventListener("input",()=>{updateLabels();document.querySelectorAll(".preset").forEach(b=>b.classList.remove("active"));}));
+  function simulateAggregateTrial(config, trialSeed) {
+    const rng = mulberry32(trialSeed);
+    const trueSkill = clamp(1500 + inverseNormal(config.percentile / 100) * 300, 750, 2700);
+    let mmr = 1500, visible = 1460, recentWins = 0;
+    const desiredComp = -Math.min(config.width * .42, 350) * (config.strength / 100);
+    const balanceNoise = Math.max(2, 58 - config.strength * .54);
+    for (let game = 0; game < config.total; game++) {
+      const allyMateMmr = mmr + desiredComp;
+      const allyTeamMmr = (mmr + 4 * allyMateMmr) / 5;
+      const mmrDifference = normal(rng) * balanceNoise;
+      const enemyTeamMmr = allyTeamMmr - mmrDifference;
+      const expected = logistic(mmrDifference, 400);
+      const allyMateTrue = allyMateMmr + normal(rng) * 58;
+      const allyTeamTrue = (trueSkill + 4 * allyMateTrue) / 5;
+      const enemyTeamTrue = enemyTeamMmr + normal(rng) * 52;
+      const actual = logistic(allyTeamTrue - enemyTeamTrue, 300);
+      const win = rng() < actual;
+      const result = win ? 1 : 0;
+      mmr = clamp(mmr + config.k * (result - expected), 400, 3000);
+      const visibleGap = mmr - visible;
+      const baseLp = 23 + clamp(visibleGap / 70, -7, 7);
+      visible = clamp(visible + (win ? baseLp : -(46 - baseLp)), 400, 3000);
+      if (game >= config.total - 200 && win) recentWins++;
+    }
+    return { mmr, visible, trueSkill, recentWinrate: recentWins / Math.min(200, config.total) };
+  }
+
+  async function runEnsemble() {
+    if (busy) return;
+    stopAuto(); busy = true; setRunningUI(true);
+    const config = configFromUI(), trials = 2000, batchSize = 25, results = [];
+    el.ensemble.textContent = "계산 중…"; el.ensembleStatus.textContent = `0 / ${trials.toLocaleString("ko-KR")}회`;
+    el.ensembleProgress.style.width = "0%";
+    for (let start = 0; start < trials; start += batchSize) {
+      const end = Math.min(trials, start + batchSize);
+      for (let i = start; i < end; i++) results.push(simulateAggregateTrial(config, (config.seed + Math.imul(i + 1, 7919)) >>> 0));
+      const progress = end / trials;
+      el.ensembleProgress.style.width = `${progress * 100}%`;
+      el.ensembleStatus.textContent = `${end.toLocaleString("ko-KR")} / ${trials.toLocaleString("ko-KR")}회`;
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    const visibleScores = results.map(r => r.visible).sort((a,b) => a-b);
+    const meanVisible = average(visibleScores), meanMmr = average(results.map(r => r.mmr));
+    const median = visibleScores[Math.floor(trials * .5)], low = visibleScores[Math.floor(trials * .1)], high = visibleScores[Math.floor(trials * .9)];
+    const convergenceRate = results.filter(r => Math.abs(r.mmr - r.trueSkill) <= 100).length / trials;
+    el.averageTier.textContent = tierName(meanVisible); el.averageScore.textContent = `평균 표시 점수 ${fmt(meanVisible)} · MMR ${fmt(meanMmr)}`;
+    el.medianTier.textContent = tierName(median); el.medianScore.textContent = `중앙값 ${fmt(median)}`;
+    el.tierRange.textContent = `${tierName(low)} – ${tierName(high)}`; el.scoreRange.textContent = `${fmt(low)} – ${fmt(high)}점`;
+    el.ensembleConvergence.textContent = pct(convergenceRate); el.ensembleStatus.textContent = `${trials.toLocaleString("ko-KR")}개 독립 시드 완료`;
+    el.ensemble.textContent = "다시 2,000회 계산"; busy = false; setRunningUI(false);
+  }
+
+  [el.skill,el.strength,el.width].forEach(input=>input.addEventListener("input",()=>{updateLabels();resetEnsemble();document.querySelectorAll(".preset").forEach(b=>b.classList.remove("active"));}));
+  [el.population,el.matches,el.k,el.seed].forEach(input=>input.addEventListener("change",resetEnsemble));
   document.querySelectorAll(".preset").forEach(btn=>btn.addEventListener("click",()=>activatePreset(btn.dataset.preset)));
   el.run.addEventListener("click",startSimulation); el.heroRun.addEventListener("click",startSimulation);
   el.cont.addEventListener("click",()=>{ if(!sim) sim=createSimulation(configFromUI()); runGames(500); });
   el.auto.addEventListener("click",toggleAuto);
+  el.randomSeed.addEventListener("click",()=>{
+    const randomValue = (window.crypto && window.crypto.getRandomValues) ? window.crypto.getRandomValues(new Uint32Array(1))[0] : Date.now();
+    el.seed.value = 1 + (randomValue % 999999);
+    resetEnsemble();
+  });
+  el.ensemble.addEventListener("click",runEnsemble);
   el.reset.addEventListener("click",()=>{stopAuto(); el.skill.value=95;el.strength.value=90;el.width.value=450;el.population.value=3000;el.matches.value=2000;el.k.value=28;el.seed.value=2026;activatePreset("balanced");sim=null;location.hash="";renderInitial();});
   el.compare.addEventListener("click",runComparison);
   $("jumpCompare").addEventListener("click",()=>{$("comparison").scrollIntoView({behavior:"smooth"});setTimeout(runComparison,350);});

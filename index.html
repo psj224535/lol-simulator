@@ -114,7 +114,10 @@
               </select>
             </label>
             <label class="field">난수 시드
-              <input id="seed" type="number" value="2026" min="1" max="999999" />
+              <span class="seed-field">
+                <input id="seed" type="number" value="2026" min="1" max="999999" />
+                <button type="button" id="randomSeed" title="무작위 시드 만들기" aria-label="무작위 시드 만들기">↻</button>
+              </span>
             </label>
           </div>
 
@@ -166,6 +169,24 @@
               <p>충분한 표본 뒤 실제 실력과 숨은 MMR·표시 티어의 차이를 계산합니다.</p>
             </div>
           </div>
+
+          <article class="ensemble-card">
+            <div class="ensemble-copy">
+              <p class="section-kicker">2,000 SEED AVERAGE</p>
+              <h3>우연을 걷어낸 평균 티어</h3>
+              <p>현재 조건을 서로 다른 2,000개 시드로 반복합니다. 빠른 집계 모델로 각 실험을 목표 경기 수까지 진행합니다.</p>
+              <button class="button ensemble-button" id="ensembleButton">2,000회 평균 계산</button>
+            </div>
+            <div class="ensemble-results">
+              <div class="ensemble-progress" aria-hidden="true"><i id="ensembleProgress"></i></div>
+              <div class="ensemble-grid">
+                <div><span>평균 최종 티어</span><strong id="averageTier">—</strong><small id="averageScore">평균 표시 점수 —</small></div>
+                <div><span>중앙값 티어</span><strong id="medianTier">—</strong><small id="medianScore">중앙값 —</small></div>
+                <div><span>가운데 80% 구간</span><strong id="tierRange">—</strong><small id="scoreRange">10~90 백분위</small></div>
+                <div><span>실력 ±100 수렴률</span><strong id="ensembleConvergence">—</strong><small id="ensembleStatus">계산 전</small></div>
+              </div>
+            </div>
+          </article>
 
           <article class="chart-card">
             <div class="chart-header">
