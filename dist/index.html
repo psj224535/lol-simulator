@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="5대5 팀 매칭에서 실력, 숨은 MMR, 표시 티어가 어떻게 수렴하는지 반복 실험하는 시뮬레이터" />
+    <title>MMR 수렴 실험실</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="MMR 수렴 실험실 홈">
+        <span class="brand-mark" aria-hidden="true">M</span>
+        <span>MMR 수렴 실험실</span>
+      </a>
+      <div class="topbar-meta">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="runStatus">실험 준비됨</span>
+        <a href="#model">모델 설명</a>
+      </div>
+    </header>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">5 vs 5 · MONTE CARLO LAB</p>
+          <h1>공정한 50% 매칭은<br /><em>실력을 숨길까?</em></h1>
+          <p class="hero-lead">
+            높은 MMR 플레이어에게 낮은 MMR 팀원을 붙여 양 팀의 기대승률을 맞출 때,
+            충분히 많은 게임 뒤에도 그 플레이어의 티어가 실제 실력보다 낮게 남는지 직접 확인합니다.
+          </p>
+          <div class="hero-actions">
+            <button class="button primary" id="heroRun">실험 시작</button>
+            <button class="button ghost" id="jumpCompare">세 정책 비교하기</button>
+          </div>
+        </div>
+        <aside class="thesis-card" aria-label="현재 실험 가설">
+          <div class="thesis-top">
+            <span>검증할 가설</span>
+            <span class="pill">H₁</span>
+          </div>
+          <blockquote>“강한 사람에게 약한 팀원을 계속 붙이면, 강한 사람도 낮은 티어에 갇힌다.”</blockquote>
+          <div class="equation" aria-label="실제 승률에서 기대 승률을 뺀 값이 MMR 변화량을 결정한다">
+            <span>ΔMMR</span><strong>=</strong><span>K × (결과 − 기대)</span>
+          </div>
+          <p>모델의 핵심은 ‘50%로 보이는 매치’와 ‘실제 실력으로 발생하는 승률’을 분리하는 것입니다.</p>
+        </aside>
+      </section>
+
+      <section class="lab-shell" aria-label="시뮬레이션 실험실">
+        <aside class="control-panel">
+          <div class="panel-heading">
+            <div>
+              <p class="section-kicker">실험 설계</p>
+              <h2>조건 설정</h2>
+            </div>
+            <button class="icon-button" id="resetButton" title="기본값으로 초기화" aria-label="기본값으로 초기화">↺</button>
+          </div>
+
+          <div class="preset-row" role="group" aria-label="실험 프리셋">
+            <button class="preset active" data-preset="balanced">50% 강제</button>
+            <button class="preset" data-preset="similar">근접 매칭</button>
+            <button class="preset" data-preset="extreme">극단 보정</button>
+          </div>
+
+          <div class="control-group">
+            <label for="skillPercentile">
+              <span>관찰 대상의 실제 실력</span>
+              <output id="skillPercentileOut">상위 5%</output>
+            </label>
+            <input id="skillPercentile" type="range" min="50" max="99" step="1" value="95" />
+            <div class="range-hints"><span>평균</span><span>최상위</span></div>
+          </div>
+
+          <div class="control-group">
+            <label for="matchStrength">
+              <span>50% 매칭 강도</span>
+              <output id="matchStrengthOut">90%</output>
+            </label>
+            <input id="matchStrength" type="range" min="0" max="100" step="5" value="90" />
+            <div class="range-hints"><span>무작위 배치</span><span>정밀 균형</span></div>
+          </div>
+
+          <div class="control-group">
+            <label for="searchWidth">
+              <span>매칭 탐색 폭</span>
+              <output id="searchWidthOut">±450 MMR</output>
+            </label>
+            <input id="searchWidth" type="range" min="80" max="900" step="10" value="450" />
+            <div class="range-hints"><span>비슷한 사람만</span><span>넓은 실력대</span></div>
+          </div>
+
+          <div class="control-grid">
+            <label class="field">인구 수
+              <select id="population">
+                <option value="1000">1,000명</option>
+                <option value="3000" selected>3,000명</option>
+                <option value="10000">10,000명</option>
+              </select>
+            </label>
+            <label class="field">목표 경기
+              <select id="matchCount">
+                <option value="500">500경기</option>
+                <option value="2000" selected>2,000경기</option>
+                <option value="5000">5,000경기</option>
+                <option value="10000">10,000경기</option>
+              </select>
+            </label>
+            <label class="field">MMR 반응 속도
+              <select id="kFactor">
+                <option value="18">느림 · K 18</option>
+                <option value="28" selected>보통 · K 28</option>
+                <option value="42">빠름 · K 42</option>
+              </select>
+            </label>
+            <label class="field">난수 시드
+              <input id="seed" type="number" value="2026" min="1" max="999999" />
+            </label>
+          </div>
+
+          <div class="run-controls">
+            <button class="button primary wide" id="runButton">처음부터 실행</button>
+            <button class="button secondary" id="continueButton">+500경기</button>
+            <button class="button secondary icon" id="autoButton" aria-pressed="false" title="연속 실행">▶</button>
+          </div>
+          <p class="microcopy">연속 실행은 일시정지할 때까지 100경기씩 누적합니다. 모든 계산은 브라우저 안에서만 진행됩니다.</p>
+        </aside>
+
+        <div class="results-panel">
+          <div class="result-header">
+            <div>
+              <p class="section-kicker">LIVE RESULT</p>
+              <h2 id="resultTitle">아직 경기를 시작하지 않았습니다</h2>
+            </div>
+            <div class="game-counter"><strong id="gameCount">0</strong><span>GAMES</span></div>
+          </div>
+
+          <div class="metric-grid">
+            <article class="metric-card accent">
+              <span>실제 실력 티어</span>
+              <strong id="trueTier">—</strong>
+              <small id="trueMmr">기준 MMR —</small>
+            </article>
+            <article class="metric-card">
+              <span>현재 표시 티어</span>
+              <strong id="visibleTier">—</strong>
+              <small id="visibleMmr">표시 점수 —</small>
+            </article>
+            <article class="metric-card">
+              <span>숨은 MMR</span>
+              <strong id="hiddenMmr">—</strong>
+              <small id="mmrGap">실력과 차이 —</small>
+            </article>
+            <article class="metric-card">
+              <span>최근 200경기</span>
+              <strong id="recentWinrate">—</strong>
+              <small id="record">0승 0패</small>
+            </article>
+          </div>
+
+          <div class="verdict" id="verdict" data-state="idle">
+            <div class="verdict-icon" aria-hidden="true">?</div>
+            <div>
+              <span>현재 판정</span>
+              <strong>조건을 설정하고 실험을 시작하세요.</strong>
+              <p>충분한 표본 뒤 실제 실력과 숨은 MMR·표시 티어의 차이를 계산합니다.</p>
+            </div>
+          </div>
+
+          <article class="chart-card">
+            <div class="chart-header">
+              <div>
+                <h3>티어 수렴 경로</h3>
+                <p>실제 실력은 고정, 숨은 MMR과 표시 점수는 경기마다 갱신됩니다.</p>
+              </div>
+              <div class="legend" aria-label="차트 범례">
+                <span><i class="legend-line true"></i>실제 실력</span>
+                <span><i class="legend-line hidden"></i>숨은 MMR</span>
+                <span><i class="legend-line visible"></i>표시 점수</span>
+              </div>
+            </div>
+            <div class="canvas-wrap"><canvas id="convergenceChart" aria-label="경기 수에 따른 실제 실력, 숨은 MMR, 표시 점수 차트"></canvas></div>
+          </article>
+
+          <div class="analysis-grid">
+            <article class="analysis-card">
+              <div class="analysis-heading"><h3>매치 품질</h3><span id="fairnessBadge">—</span></div>
+              <dl>
+                <div><dt>시스템 예상 승률</dt><dd id="expectedChance">—</dd></div>
+                <div><dt>실제 실력 기반 승률</dt><dd id="actualChance">—</dd></div>
+                <div><dt>내 팀원 평균 MMR</dt><dd id="allyAverage">—</dd></div>
+                <div><dt>상대 팀 평균 MMR</dt><dd id="enemyAverage">—</dd></div>
+              </dl>
+            </article>
+            <article class="analysis-card">
+              <div class="analysis-heading"><h3>수렴 진단</h3><span id="convergenceBadge">대기</span></div>
+              <dl>
+                <div><dt>실력-MMR 오차</dt><dd id="skillError">—</dd></div>
+                <div><dt>첫 ±100 진입</dt><dd id="firstConvergence">—</dd></div>
+                <div><dt>평균 팀원 보정</dt><dd id="compensation">—</dd></div>
+                <div><dt>표본 신뢰도</dt><dd id="confidence">—</dd></div>
+              </dl>
+            </article>
+          </div>
+
+          <article class="log-card">
+            <div class="chart-header"><div><h3>최근 경기</h3><p>시스템의 기대와 실제 결과가 어긋날 때 MMR이 움직입니다.</p></div></div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>경기</th><th>결과</th><th>예상</th><th>실제</th><th>팀 보정</th><th>MMR 변화</th></tr></thead>
+                <tbody id="matchLog"><tr><td colspan="6" class="empty-row">실행 후 최근 8경기가 표시됩니다.</td></tr></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="comparison" id="comparison">
+        <div class="section-heading">
+          <div><p class="section-kicker">CONTROLLED COMPARISON</p><h2>매칭 정책만 바꾸면?</h2></div>
+          <p>같은 실력과 같은 출발점에서 세 가지 매칭 정책을 독립적으로 반복해 마지막 500경기를 비교합니다.</p>
+        </div>
+        <div class="comparison-grid" id="comparisonGrid">
+          <article class="policy-card">
+            <div class="policy-number">01</div><h3>근접 MMR</h3><p>좁은 범위 안에서 비슷한 플레이어를 우선 매칭합니다.</p>
+            <div class="policy-placeholder">비교 실험 전</div>
+          </article>
+          <article class="policy-card featured">
+            <div class="policy-number">02</div><h3>50% 강제</h3><p>넓은 후보군에서 양 팀 평균 MMR이 같도록 강하게 조정합니다.</p>
+            <div class="policy-placeholder">비교 실험 전</div>
+          </article>
+          <article class="policy-card">
+            <div class="policy-number">03</div><h3>극단 보정</h3><p>고MMR 한 명과 저MMR 팀원을 적극적으로 섞어 균형을 맞춥니다.</p>
+            <div class="policy-placeholder">비교 실험 전</div>
+          </article>
+        </div>
+        <button class="button primary compare-button" id="compareButton">3개 정책 × 2,000경기 비교</button>
+        <p class="comparison-note" id="comparisonNote">결과의 차이는 매칭 폭과 균형 탐색 강도에서만 발생합니다.</p>
+      </section>
+
+      <section class="model-section" id="model">
+        <div class="section-heading">
+          <div><p class="section-kicker">MODEL NOTES</p><h2>이 실험이 계산하는 것</h2></div>
+          <p>라이엇의 비공개 공식을 주장하지 않습니다. 공개된 원칙을 단순화한 연구용 모델입니다.</p>
+        </div>
+        <div class="feedback-loop" aria-label="경기 결과가 다음 매칭에 반영되는 순환 구조">
+          <div><span>01</span><strong>5대5 경기 결과</strong><small>승리 5명 · 패배 5명</small></div>
+          <b aria-hidden="true">→</b>
+          <div><span>02</span><strong>10명 MMR 갱신</strong><small>예상 밖 결과일수록 크게 변화</small></div>
+          <b aria-hidden="true">→</b>
+          <div><span>03</span><strong>다음 후보군 재계산</strong><small>갱신된 MMR로 탐색</small></div>
+          <b aria-hidden="true">→</b>
+          <div><span>04</span><strong>팀원 보정 변화</strong><small>상승한 사람은 더 약한 팀원 가능</small></div>
+        </div>
+        <div class="model-grid">
+          <article><span>01</span><h3>실력과 MMR 분리</h3><p>실제 실력은 경기 승률을 만들고, 숨은 MMR은 매칭과 기대승률 계산에 사용됩니다.</p></article>
+          <article><span>02</span><h3>5명이 함께 승패</h3><p>개인 점수나 KDA는 쓰지 않습니다. 한 팀의 다섯 명 모두가 같은 승패 결과를 받습니다.</p></article>
+          <article><span>03</span><h3>표시 티어의 지연</h3><p>표시 점수는 숨은 MMR을 뒤따르며, 둘의 차이에 따라 승리·패배 변화량이 달라집니다.</p></article>
+          <article><span>04</span><h3>확률적 결과</h3><p>더 강한 팀도 질 수 있습니다. 팀 평균 실력 차이를 로지스틱 승률로 바꿔 매번 추첨합니다.</p></article>
+        </div>
+        <div class="disclaimer">
+          <strong>해석할 때 주의</strong>
+          <p>포지션, 챔피언 숙련도, 듀오, 자동 배정, 시즌 초기화, 탈주·제재 등은 포함하지 않았습니다. 티어 경계와 LP는 읽기 쉬운 가상 척도이며 실제 내부 MMR 수치가 아닙니다.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer><span>MMR CONVERGENCE LAB</span><p>가설을 숫자로 바꾸고, 충분히 오래 돌려보세요.</p></footer>
+    <script src="./app.js"></script>
+  </body>
+</html>
