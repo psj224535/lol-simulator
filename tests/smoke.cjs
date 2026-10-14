@@ -8,6 +8,7 @@ class MockNode {
     this.innerHTML = "";
     this.disabled = false;
     this.dataset = {};
+    this.style = {};
     this.listeners = {};
     this.classList = { add() {}, remove() {}, toggle() {} };
   }
@@ -40,7 +41,7 @@ global.document = {
   querySelectorAll: () => [],
   querySelector: () => new MockNode("query")
 };
-global.window = { devicePixelRatio: 1, addEventListener() {} };
+global.window = { devicePixelRatio: 1, addEventListener() {}, crypto: { getRandomValues(array) { array[0] = 424242; return array; } } };
 global.location = { hash: "" };
 global.requestAnimationFrame = (fn) => setImmediate(fn);
 
@@ -57,7 +58,11 @@ async function main() {
   if (node("gameCount").textContent !== "500") throw new Error("500경기 시뮬레이션이 완료되지 않았습니다.");
   if (!/경기 진행/.test(node("resultTitle").textContent)) throw new Error("결과 제목이 갱신되지 않았습니다.");
   if (!node("matchLog").innerHTML.includes("#500")) throw new Error("최근 경기 로그가 갱신되지 않았습니다.");
-  console.log(`smoke ok: 500 games, ${node("hiddenMmr").textContent} hidden MMR, metrics and match log rendered`);
+  const ensembleClick = node("ensembleButton").listeners.click;
+  if (!ensembleClick) throw new Error("2,000회 평균 버튼 이벤트가 연결되지 않았습니다.");
+  await ensembleClick();
+  if (!node("averageTier").textContent || node("averageTier").textContent === "—") throw new Error("2,000회 평균 결과가 완료되지 않았습니다.");
+  console.log(`smoke ok: 500 games, ${node("hiddenMmr").textContent} hidden MMR, ensemble ${node("averageTier").textContent}`);
 }
 
 main().catch(error => { console.error(error); process.exit(1); });
