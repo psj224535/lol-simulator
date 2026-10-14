@@ -124,13 +124,17 @@
         const j = Math.floor(s.rng() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]];
       }
       const allies = pool.slice(0, 4), enemies = pool.slice(4);
+      const allyMateAvg = allies.reduce((sum, i) => sum + s.players[i].mmr, 0) / 4;
       const allyMmr = (s.focal.mmr + allies.reduce((sum, i) => sum + s.players[i].mmr, 0)) / 5;
       const enemyMmr = enemies.reduce((sum, i) => sum + s.players[i].mmr, 0) / 5;
       const balanceError = Math.abs(allyMmr - enemyMmr);
+      // 강한 플레이어의 상승분을 약한 팀원으로 상쇄하는 정책을 명시적으로 모델링한다.
+      const desiredCompensation = -Math.min(s.config.width * .42, 350) * (s.config.strength / 100);
+      const compensationError = Math.abs((allyMateAvg - s.focal.mmr) - desiredCompensation);
       const spread = Math.sqrt(average(pool.map(i => Math.pow(s.players[i].mmr - s.focal.mmr, 2))));
       const spreadPenalty = Math.max(0, spread - s.config.width * .82) * .05;
-      const score = balanceError + spreadPenalty;
-      if (!best || score < best.score) best = { allies, enemies, allyMmr, enemyMmr, score, balanceError };
+      const score = balanceError + compensationError * .42 * (s.config.strength / 100) + spreadPenalty;
+      if (!best || score < best.score) best = { allies, enemies, allyMmr, allyMateAvg, enemyMmr, score, balanceError };
     }
     return best;
   }
@@ -156,8 +160,8 @@
     win ? s.wins++ : s.losses++;
     s.results.push(win);
     if (s.results.length > 500) s.results.shift();
-    const allyMateAvg = average(match.allies.map(i => s.players[i].mmr));
-    const enemyAvg = average(match.enemies.map(i => s.players[i].mmr));
+    const allyMateAvg = match.allyMateAvg;
+    const enemyAvg = match.enemyMmr;
     s.sums.expected += expected; s.sums.actual += actual; s.sums.ally += allyMateAvg; s.sums.enemy += enemyAvg;
     s.sums.compensation += allyMateAvg - s.focal.mmr; s.sums.quality += match.balanceError;
     s.logs.unshift({ game: s.game, win, expected, actual, compensation: allyMateAvg - oldMmr, delta });
@@ -299,7 +303,7 @@
     ];
     const results=[];
     for(let sIndex=0;sIndex<specs.length;sIndex++){
-      const spec=specs[sIndex], local=createSimulation(configFromUI({strength:spec.strength,width:spec.width,total:2000,seed:Number(el.seed.value)+sIndex*97}));
+      const spec=specs[sIndex], local=createSimulation(configFromUI({strength:spec.strength,width:spec.width,total:2000,seed:Number(el.seed.value)}));
       for(let i=0;i<2000;i++) playOne(local);
       const recent=local.results.slice(-500), wins=recent.filter(Boolean).length;
       results.push({spec,mmr:local.focal.mmr,visible:local.focal.visible,gap:local.focal.mmr-local.focal.trueSkill,winrate:wins/recent.length,comp:local.sums.compensation/local.game,quality:local.sums.quality/local.game});
